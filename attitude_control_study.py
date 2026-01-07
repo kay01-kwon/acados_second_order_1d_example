@@ -1,7 +1,35 @@
 import numpy as np
+import matplotlib.pyplot as plt
 from model.S550_sim_model import S550_Attitude_model
 from ode_solver import custom_rk4
 from PID_control.pid_attitude import PID_control
+
+def quaternion_to_euler(q):
+    """
+    Convert quaternion to Euler angles (roll, pitch, yaw)
+    :param q: quaternion [qw, qx, qy, qz]
+    :return: Euler angles [roll, pitch, yaw] in radians
+    """
+    qw, qx, qy, qz = q
+
+    # Roll (x-axis rotation)
+    sinr_cosp = 2 * (qw * qx + qy * qz)
+    cosr_cosp = 1 - 2 * (qx * qx + qy * qy)
+    roll = np.arctan2(sinr_cosp, cosr_cosp)
+
+    # Pitch (y-axis rotation)
+    sinp = 2 * (qw * qy - qz * qx)
+    if abs(sinp) >= 1:
+        pitch = np.copysign(np.pi / 2, sinp)
+    else:
+        pitch = np.arcsin(sinp)
+
+    # Yaw (z-axis rotation)
+    siny_cosp = 2 * (qw * qz + qx * qy)
+    cosy_cosp = 1 - 2 * (qy * qy + qz * qz)
+    yaw = np.arctan2(siny_cosp, cosy_cosp)
+
+    return roll, pitch, yaw
 
 def main():
 
@@ -44,12 +72,80 @@ def main():
 
     cmd = np.array([w_rotor_idle]*6)
 
+    # Data storage
+    roll_hist = []
+    pitch_hist = []
+    w_rotor_hist = []
+    alpha_rotor_hist = []
+
     for i in range(len(t)-1):
+
+        # Store current state data
+        q, w, w_rot, alpha_rot = sim_model.unpack_state(s)
+        roll, pitch, yaw = quaternion_to_euler(q)
+
+        roll_hist.append(np.rad2deg(roll))
+        pitch_hist.append(np.rad2deg(pitch))
+        w_rotor_hist.append(w_rot.copy())
+        alpha_rotor_hist.append(alpha_rot.copy())
 
         t_ode = [t[i], t[i+1]]
 
         s = custom_rk4.do_step(sim_model.dynamics,
                                s, cmd, tspan=t_ode)
+
+    # Convert to numpy arrays
+    roll_hist = np.array(roll_hist)
+    pitch_hist = np.array(pitch_hist)
+    w_rotor_hist = np.array(w_rotor_hist)
+    alpha_rotor_hist = np.array(alpha_rotor_hist)
+    t_plot = t[:-1]
+
+    # Create plots
+    fig, axs = plt.subplots(2, 2, figsize=(12, 10))
+
+    # Plot Roll
+    axs[0, 0].plot(t_plot, roll_hist, 'b-', linewidth=2)
+    axs[0, 0].set_xlabel('Time [s]')
+    axs[0, 0].set_ylabel('Roll [deg]')
+    axs[0, 0].set_title('Roll Angle')
+    axs[0, 0].grid(True)
+
+    # Plot Pitch
+    axs[0, 1].plot(t_plot, pitch_hist, 'r-', linewidth=2)
+    axs[0, 1].set_xlabel('Time [s]')
+    axs[0, 1].set_ylabel('Pitch [deg]')
+    axs[0, 1].set_title('Pitch Angle')
+    axs[0, 1].grid(True)
+
+    # Plot Rotor Speeds
+    axs[1, 0].plot(t_plot, w_rotor_hist[:, 0], label='Rotor 1')
+    axs[1, 0].plot(t_plot, w_rotor_hist[:, 1], label='Rotor 2')
+    axs[1, 0].plot(t_plot, w_rotor_hist[:, 2], label='Rotor 3')
+    axs[1, 0].plot(t_plot, w_rotor_hist[:, 3], label='Rotor 4')
+    axs[1, 0].plot(t_plot, w_rotor_hist[:, 4], label='Rotor 5')
+    axs[1, 0].plot(t_plot, w_rotor_hist[:, 5], label='Rotor 6')
+    axs[1, 0].set_xlabel('Time [s]')
+    axs[1, 0].set_ylabel('Rotor Speed [RPM]')
+    axs[1, 0].set_title('Rotor Speeds')
+    axs[1, 0].legend()
+    axs[1, 0].grid(True)
+
+    # Plot Rotor Accelerations
+    axs[1, 1].plot(t_plot, alpha_rotor_hist[:, 0], label='Rotor 1')
+    axs[1, 1].plot(t_plot, alpha_rotor_hist[:, 1], label='Rotor 2')
+    axs[1, 1].plot(t_plot, alpha_rotor_hist[:, 2], label='Rotor 3')
+    axs[1, 1].plot(t_plot, alpha_rotor_hist[:, 3], label='Rotor 4')
+    axs[1, 1].plot(t_plot, alpha_rotor_hist[:, 4], label='Rotor 5')
+    axs[1, 1].plot(t_plot, alpha_rotor_hist[:, 5], label='Rotor 6')
+    axs[1, 1].set_xlabel('Time [s]')
+    axs[1, 1].set_ylabel('Rotor Acceleration [RPM/s]')
+    axs[1, 1].set_title('Rotor Accelerations')
+    axs[1, 1].legend()
+    axs[1, 1].grid(True)
+
+    plt.tight_layout()
+    plt.show()
 
 if __name__ == '__main__':
     main()
