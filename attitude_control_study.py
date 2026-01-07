@@ -104,8 +104,10 @@ def main():
 
         t_ode = [t[i], t[i+1]]
 
-        M = pid_control.set(s,ref)
-        cmd = control_allocator.compute_des_rpm(f,M)
+        # Compute control inputs
+        M = pid_control.set(s, ref)
+        f = sim_model.m * sim_model.g  # Hover thrust
+        cmd = control_allocator.compute_des_rpm(f, M)
 
         s = custom_rk4.do_step(sim_model.dynamics,
                                s, cmd, tspan=t_ode)
