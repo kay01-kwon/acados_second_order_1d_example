@@ -41,7 +41,7 @@ class PID_Position_Control:
 
     def compute_control(self, s, p_des, v_des, dt, yaw_des=0.0):
         """
-        Compute desired thrust and attitude quaternion
+        Compute desired thrust and desired rotation matrix (geometric control)
 
         Args:
             s: current state vector [p(3), v(3), q(4), w(3), ...]
@@ -52,7 +52,7 @@ class PID_Position_Control:
 
         Returns:
             f_des: desired total thrust (scalar, in Newtons)
-            q_des: desired quaternion [qw, qx, qy, qz]
+            R_des: desired rotation matrix (3x3) from body to world
         """
         # Extract current position and velocity
         p = s[0:3]
@@ -95,129 +95,48 @@ class PID_Position_Control:
             z_body_des = np.array([0.0, 0.0, 1.0])
             f_des = self.m * self.g  # Hover thrust
 
-        # Desired quaternion from desired z-axis and yaw
-        q_des = self._compute_desired_quaternion(z_body_des, yaw_des)
+        # Compute desired rotation matrix from z-axis and yaw
+        R_des = self._compute_desired_rotation_matrix(z_body_des, yaw_des)
 
-        return f_des, q_des
+        return f_des, R_des
 
-    def _compute_desired_quaternion(self, z_body_des, yaw_des):
+    def _compute_desired_rotation_matrix(self, z_body_des, yaw_des):
         """
-        Compute desired quaternion from desired body z-axis and yaw angle
-        Using angle-axis representation for numerical stability
+        Compute desired rotation matrix from desired body z-axis and yaw angle
+        Direct construction for geometric control (more stable than quaternions)
 
         Args:
             z_body_des: desired body z-axis direction (unit vector in world frame)
             yaw_des: desired yaw angle (rad)
 
         Returns:
-            q_des: desired quaternion [qw, qx, qy, qz]
+            R_des: desired rotation matrix (3x3) from body to world frame
         """
         # Ensure z_body_des is normalized
-        z_body_des = z_body_des / np.linalg.norm(z_body_des)
+        z_b = z_body_des / np.linalg.norm(z_body_des)
 
-        # Build rotation matrix using ZYX convention
-        # First, construct intermediate frame aligned with yaw
+        # Vector in horizontal plane aligned with desired yaw
         c_yaw = np.cos(yaw_des)
         s_yaw = np.sin(yaw_des)
+        x_c = np.array([c_yaw, s_yaw, 0.0])
 
-        # Vector in horizontal plane aligned with yaw
-        c_vec = np.array([c_yaw, s_yaw, 0.0])
+        # Compute y-axis: y_b = z_b × x_c (perpendicular to both)
+        y_b = np.cross(z_b, x_c)
+        y_b_norm = np.linalg.norm(y_b)
 
-        # Desired y-axis: perpendicular to both z_body_des and c_vec
-        y_body_des = np.cross(z_body_des, c_vec)
-        y_norm = np.linalg.norm(y_body_des)
-
-        if y_norm < 1e-6:
-            # Singularity: z_body_des is vertical
-            # Use yaw to define x-axis directly
-            x_body_des = c_vec
-            y_body_des = np.cross(z_body_des, x_body_des)
-            y_body_des = y_body_des / np.linalg.norm(y_body_des)
+        if y_b_norm < 1e-6:
+            # Singularity: z_body is vertical (aligned with world z)
+            # In this case, just use yaw directly
+            x_b = x_c
+            y_b = np.cross(z_b, x_b)
+            y_b = y_b / np.linalg.norm(y_b)
         else:
-            y_body_des = y_body_des / y_norm
+            y_b = y_b / y_b_norm
 
-        # Desired x-axis: orthogonal to y and z
-        x_body_des = np.cross(y_body_des, z_body_des)
-        x_body_des = x_body_des / np.linalg.norm(x_body_des)
+        # Compute x-axis: x_b = y_b × z_b (complete right-handed frame)
+        x_b = np.cross(y_b, z_b)
 
-        # Construct rotation matrix [x_body | y_body | z_body]
-        R_des = np.column_stack([x_body_des, y_body_des, z_body_des])
+        # Construct rotation matrix R = [x_b | y_b | z_b]
+        R_des = np.column_stack([x_b, y_b, z_b])
 
-        # Convert to quaternion using angle-axis
-        q_des = self._rotation_matrix_to_quaternion_angleaxis(R_des)
-
-        return q_des
-
-    def _rotation_matrix_to_quaternion_angleaxis(self, R):
-        """
-        Convert rotation matrix to quaternion using angle-axis representation
-        More numerically stable than direct conversion
-
-        Uses: trace(R) for angle, (R - R^T) for axis
-
-        Args:
-            R: 3x3 rotation matrix
-
-        Returns:
-            q: quaternion [qw, qx, qy, qz]
-        """
-        # Compute rotation angle from trace
-        # trace(R) = 1 + 2*cos(theta)
-        trace_R = np.trace(R)
-        cos_theta = (trace_R - 1.0) / 2.0
-        cos_theta = np.clip(cos_theta, -1.0, 1.0)  # Numerical safety
-        theta = np.arccos(cos_theta)
-
-        # Handle small angle case (near identity)
-        if theta < 1e-6:
-            return np.array([1.0, 0.0, 0.0, 0.0])
-
-        # Compute rotation axis from skew-symmetric part
-        # R - R^T = 2*sin(theta)*[k]_x where k is the unit axis
-        sin_theta = np.sin(theta)
-
-        if abs(sin_theta) > 1e-6:
-            # Extract axis from skew-symmetric matrix
-            k_x = (R[2, 1] - R[1, 2]) / (2.0 * sin_theta)
-            k_y = (R[0, 2] - R[2, 0]) / (2.0 * sin_theta)
-            k_z = (R[1, 0] - R[0, 1]) / (2.0 * sin_theta)
-            k = np.array([k_x, k_y, k_z])
-
-            # Normalize axis (should already be unit, but ensure numerical stability)
-            k = k / np.linalg.norm(k)
-
-            # Convert angle-axis to quaternion
-            # q = [cos(theta/2), sin(theta/2)*k]
-            half_theta = theta / 2.0
-            qw = np.cos(half_theta)
-            sin_half = np.sin(half_theta)
-            qx = sin_half * k[0]
-            qy = sin_half * k[1]
-            qz = sin_half * k[2]
-
-            q = np.array([qw, qx, qy, qz])
-        else:
-            # theta ≈ π, use alternative method
-            # Find the column of R with largest diagonal element
-            diag = np.diag(R)
-            k_idx = np.argmax(diag)
-
-            if k_idx == 0:
-                k = np.array([R[0, 0] + 1, R[1, 0], R[2, 0]])
-            elif k_idx == 1:
-                k = np.array([R[0, 1], R[1, 1] + 1, R[2, 1]])
-            else:
-                k = np.array([R[0, 2], R[1, 2], R[2, 2] + 1])
-
-            k = k / np.linalg.norm(k)
-
-            # For theta ≈ π: q ≈ [0, k]
-            half_theta = theta / 2.0
-            qw = np.cos(half_theta)
-            sin_half = np.sin(half_theta)
-            q = np.array([qw, sin_half * k[0], sin_half * k[1], sin_half * k[2]])
-
-        # Normalize quaternion
-        q = q / np.linalg.norm(q)
-
-        return q
+        return R_des
