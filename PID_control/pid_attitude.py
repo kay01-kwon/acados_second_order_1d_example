@@ -41,8 +41,8 @@ class PID_control:
         q1_mat = np.array([
             [qw, -qx, -qy, -qz],
             [qx, qw, -qz, qy],
-            [qy, qy, qw, -qx],
-            [qz, -qy, qz, qw]
+            [qy, qz, qw, -qx],
+            [qz, -qy, qx, qw]
         ])
 
         return q1_mat @ q2
