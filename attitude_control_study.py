@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 from model.S550_sim_model import S550_Attitude_model
 from ode_solver import custom_rk4
 from PID_control.pid_attitude import PID_control
+from PID_control.control_allocator import ControlAllocator
 
 def quaternion_to_euler(q):
     """
@@ -58,6 +59,10 @@ def main():
 
     pid_control = PID_control(DynamicParams=dynamic_params,
                               GainParams=gain_params)
+
+    control_allocator = ControlAllocator(DroneParams=drone_params,
+                                         RotorParams=rotor_params)
+
     tf = 10.0
     dt = 0.01
     t = np.arange(0, tf, dt)
@@ -70,6 +75,7 @@ def main():
     alpha_rotor_init = np.array([0.0]*6)
     s = np.concatenate((q_init, w_init, w_rotor_init, alpha_rotor_init))
 
+    ref = np.array([1.0, 0.0, 0.0, 0.0])
     cmd = np.array([w_rotor_idle]*6)
 
     # Data storage
@@ -90,6 +96,9 @@ def main():
         alpha_rotor_hist.append(alpha_rot.copy())
 
         t_ode = [t[i], t[i+1]]
+
+        M = pid_control.set(s,ref)
+        cmd = control_allocator.compute_des_rpm(f,M)
 
         s = custom_rk4.do_step(sim_model.dynamics,
                                s, cmd, tspan=t_ode)
