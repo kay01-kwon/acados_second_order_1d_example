@@ -44,7 +44,7 @@ def main():
 
     cmd = np.array([w_rotor_idle]*6)
 
-    for i in range(len(t)):
+    for i in range(len(t)-1):
 
         t_ode = [t[i], t[i+1]]
 
