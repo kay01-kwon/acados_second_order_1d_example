@@ -1,6 +1,7 @@
 """
 
 Hexacopter X + Rotor Dynamics Simulation with Acados
+- Full 6DOF dynamics (position + attitude)
 - Quaternion-based attitude dynamics
 - six rotor 2nd order dynamics with constraints
 - COM offset included
@@ -18,6 +19,8 @@ class S550_State:
     """
     Complete state of S550
     """
+    p: np.ndarray           # position [x, y, z]
+    v: np.ndarray           # linear velocity [vx, vy, vz]
     q: np.ndarray           # quaternion [w, x, y, z]
     w: np.ndarray           # angular velocity [x, y, z]
     w_rot: np.ndarray       # rotor speeds [6] (RPM/s)
@@ -25,13 +28,13 @@ class S550_State:
 
 class S550_Attitude_model:
     """
-    S550_Attitude_model
+    S550_Full_6DOF_model
 
     DynamicParams: m, MoiArray, com_offset
     DroneParams: arm_length, motor_const, moment_const
     RotorParams: p, w_rotor_min, w_rotor_max, alpha_rotor_max, jerk_rotor_max
 
-    State: [q(4), omega(3), rotor_omega(6), rotor_omega_dot(6)] = 19 states
+    State: [p(3), v(3), q(4), omega(3), rotor_omega(6), rotor_omega_dot(6)] = 25 states
     Input: rotor_cmd(6)
     """
     def __init__(self, DynamicParams, DroneParams, RotorParams):
@@ -82,17 +85,35 @@ class S550_Attitude_model:
                 -self.com_offset[2]
             ])
 
-    def pack_state(self, q, w, w_rot, alpha_rot):
+    def pack_state(self, p, v, q, w, w_rot, alpha_rot):
         """ Pack state into vector"""
-        return np.concatenate([q, w, w_rot, alpha_rot])
+        return np.concatenate([p, v, q, w, w_rot, alpha_rot])
 
     def unpack_state(self, s):
         """ Unpack state from vector"""
-        q = s[0:4]
-        w = s[4:7]
-        w_rot = s[7:13]
-        alpha_rot = s[13:19]
-        return q, w, w_rot, alpha_rot
+        p = s[0:3]
+        v = s[3:6]
+        q = s[6:10]
+        w = s[10:13]
+        w_rot = s[13:19]
+        alpha_rot = s[19:25]
+        return p, v, q, w, w_rot, alpha_rot
+
+    def quaternion_to_rotation_matrix(self, q):
+        """
+        Convert quaternion to rotation matrix (body to world)
+        :param q: quaternion [qw, qx, qy, qz]
+        :return: 3x3 rotation matrix
+        """
+        qw, qx, qy, qz = q
+
+        R = np.array([
+            [1 - 2*(qy**2 + qz**2), 2*(qx*qy - qw*qz), 2*(qx*qz + qw*qy)],
+            [2*(qx*qy + qw*qz), 1 - 2*(qx**2 + qz**2), 2*(qy*qz - qw*qx)],
+            [2*(qx*qz - qw*qy), 2*(qy*qz + qw*qx), 1 - 2*(qx**2 + qy**2)]
+        ])
+
+        return R
 
     def compute_thrust_moment(self, w_rot):
         """Compute thrust and moment"""
@@ -113,15 +134,27 @@ class S550_Attitude_model:
         """
         Dynamics function for rk4
         :param t: time (Not use, but required for rk4 interface)
-        :param s: state vector [19]
+        :param s: state vector [25]
         :param u: input (rotor command) [6]
-        :return: dsdt state derivative [19]
+        :return: dsdt state derivative [25]
         """
 
-        q, w, w_rot, alpha_rot = self.unpack_state(s)
+        p, v, q, w, w_rot, alpha_rot = self.unpack_state(s)
 
         thrust, moment = self.compute_thrust_moment(w_rot)
 
+        # Position dynamics: dpdt = v
+        dpdt = v
+
+        # Translational dynamics: dvdt = R * thrust_body / m - g_world
+        R = self.quaternion_to_rotation_matrix(q)
+        thrust_body = np.array([0.0, 0.0, thrust])  # Thrust in body frame (z-axis)
+        thrust_world = R @ thrust_body  # Transform to world frame
+        gravity_world = np.array([0.0, 0.0, -self.m * self.g])  # Gravity in world frame
+
+        dvdt = (thrust_world + gravity_world) / self.m
+
+        # Attitude dynamics: dqdt = 0.5 * q_l * w_quat
         qw, qx, qy, qz = q
         wx, wy, wz = w
         w_quat = np.array([0.0, wx, wy, wz])
@@ -135,10 +168,11 @@ class S550_Attitude_model:
 
         dqdt = 0.5 * q_l @ w_quat
 
+        # Rotational dynamics: dwdt = J^-1 * (moment - w x Jw)
         J_w = self.J @ w
         dwdt = np.linalg.solve(self.J, moment - np.cross(w, J_w))
 
-
+        # Rotor dynamics
         w_dot_rot = np.zeros(6)
         jerk_rot = np.zeros(6)
 
@@ -163,6 +197,6 @@ class S550_Attitude_model:
 
             jerk_rot[i] = j_i_clamp
 
-        return self.pack_state(dqdt, dwdt, w_dot_rot, jerk_rot)
+        return self.pack_state(dpdt, dvdt, dqdt, dwdt, w_dot_rot, jerk_rot)
 
 

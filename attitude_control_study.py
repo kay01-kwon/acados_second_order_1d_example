@@ -69,16 +69,21 @@ def main():
 
     w_rotor_idle = 2000.0
 
-    q_init = np.array([1.0, 0.0, 0.0, 0.0])
-    w_init = np.array([0.0, 0.0, 0.0])
-    w_rotor_init = np.array([w_rotor_idle]*6)
-    alpha_rotor_init = np.array([0.0]*6)
-    s = np.concatenate((q_init, w_init, w_rotor_init, alpha_rotor_init))
+    # Initial conditions
+    p_init = np.array([0.0, 0.0, 0.0])  # Initial position [x, y, z]
+    v_init = np.array([0.0, 0.0, 0.0])  # Initial velocity [vx, vy, vz]
+    q_init = np.array([1.0, 0.0, 0.0, 0.0])  # Initial quaternion (identity)
+    w_init = np.array([0.0, 0.0, 0.0])  # Initial angular velocity
+    w_rotor_init = np.array([w_rotor_idle]*6)  # Initial rotor speeds
+    alpha_rotor_init = np.array([0.0]*6)  # Initial rotor accelerations
+    s = np.concatenate((p_init, v_init, q_init, w_init, w_rotor_init, alpha_rotor_init))
 
     ref = np.array([1.0, 0.0, 0.0, 0.0])
     cmd = np.array([w_rotor_idle]*6)
 
     # Data storage
+    pos_hist = []
+    vel_hist = []
     roll_hist = []
     pitch_hist = []
     w_rotor_hist = []
@@ -87,9 +92,11 @@ def main():
     for i in range(len(t)-1):
 
         # Store current state data
-        q, w, w_rot, alpha_rot = sim_model.unpack_state(s)
+        p, v, q, w, w_rot, alpha_rot = sim_model.unpack_state(s)
         roll, pitch, yaw = quaternion_to_euler(q)
 
+        pos_hist.append(p.copy())
+        vel_hist.append(v.copy())
         roll_hist.append(np.rad2deg(roll))
         pitch_hist.append(np.rad2deg(pitch))
         w_rotor_hist.append(w_rot.copy())
@@ -104,6 +111,8 @@ def main():
                                s, cmd, tspan=t_ode)
 
     # Convert to numpy arrays
+    pos_hist = np.array(pos_hist)
+    vel_hist = np.array(vel_hist)
     roll_hist = np.array(roll_hist)
     pitch_hist = np.array(pitch_hist)
     w_rotor_hist = np.array(w_rotor_hist)
@@ -111,47 +120,67 @@ def main():
     t_plot = t[:-1]
 
     # Create plots
-    fig, axs = plt.subplots(2, 2, figsize=(12, 10))
+    fig, axs = plt.subplots(3, 2, figsize=(14, 12))
 
-    # Plot Roll
-    axs[0, 0].plot(t_plot, roll_hist, 'b-', linewidth=2)
+    # Plot Position
+    axs[0, 0].plot(t_plot, pos_hist[:, 0], 'r-', label='x', linewidth=2)
+    axs[0, 0].plot(t_plot, pos_hist[:, 1], 'g-', label='y', linewidth=2)
+    axs[0, 0].plot(t_plot, pos_hist[:, 2], 'b-', label='z', linewidth=2)
     axs[0, 0].set_xlabel('Time [s]')
-    axs[0, 0].set_ylabel('Roll [deg]')
-    axs[0, 0].set_title('Roll Angle')
+    axs[0, 0].set_ylabel('Position [m]')
+    axs[0, 0].set_title('Position')
+    axs[0, 0].legend()
     axs[0, 0].grid(True)
 
-    # Plot Pitch
-    axs[0, 1].plot(t_plot, pitch_hist, 'r-', linewidth=2)
+    # Plot Velocity
+    axs[0, 1].plot(t_plot, vel_hist[:, 0], 'r-', label='vx', linewidth=2)
+    axs[0, 1].plot(t_plot, vel_hist[:, 1], 'g-', label='vy', linewidth=2)
+    axs[0, 1].plot(t_plot, vel_hist[:, 2], 'b-', label='vz', linewidth=2)
     axs[0, 1].set_xlabel('Time [s]')
-    axs[0, 1].set_ylabel('Pitch [deg]')
-    axs[0, 1].set_title('Pitch Angle')
+    axs[0, 1].set_ylabel('Velocity [m/s]')
+    axs[0, 1].set_title('Velocity')
+    axs[0, 1].legend()
     axs[0, 1].grid(True)
 
-    # Plot Rotor Speeds
-    axs[1, 0].plot(t_plot, w_rotor_hist[:, 0], label='Rotor 1')
-    axs[1, 0].plot(t_plot, w_rotor_hist[:, 1], label='Rotor 2')
-    axs[1, 0].plot(t_plot, w_rotor_hist[:, 2], label='Rotor 3')
-    axs[1, 0].plot(t_plot, w_rotor_hist[:, 3], label='Rotor 4')
-    axs[1, 0].plot(t_plot, w_rotor_hist[:, 4], label='Rotor 5')
-    axs[1, 0].plot(t_plot, w_rotor_hist[:, 5], label='Rotor 6')
+    # Plot Roll
+    axs[1, 0].plot(t_plot, roll_hist, 'b-', linewidth=2)
     axs[1, 0].set_xlabel('Time [s]')
-    axs[1, 0].set_ylabel('Rotor Speed [RPM]')
-    axs[1, 0].set_title('Rotor Speeds')
-    axs[1, 0].legend()
+    axs[1, 0].set_ylabel('Roll [deg]')
+    axs[1, 0].set_title('Roll Angle')
     axs[1, 0].grid(True)
 
-    # Plot Rotor Accelerations
-    axs[1, 1].plot(t_plot, alpha_rotor_hist[:, 0], label='Rotor 1')
-    axs[1, 1].plot(t_plot, alpha_rotor_hist[:, 1], label='Rotor 2')
-    axs[1, 1].plot(t_plot, alpha_rotor_hist[:, 2], label='Rotor 3')
-    axs[1, 1].plot(t_plot, alpha_rotor_hist[:, 3], label='Rotor 4')
-    axs[1, 1].plot(t_plot, alpha_rotor_hist[:, 4], label='Rotor 5')
-    axs[1, 1].plot(t_plot, alpha_rotor_hist[:, 5], label='Rotor 6')
+    # Plot Pitch
+    axs[1, 1].plot(t_plot, pitch_hist, 'r-', linewidth=2)
     axs[1, 1].set_xlabel('Time [s]')
-    axs[1, 1].set_ylabel('Rotor Acceleration [RPM/s]')
-    axs[1, 1].set_title('Rotor Accelerations')
-    axs[1, 1].legend()
+    axs[1, 1].set_ylabel('Pitch [deg]')
+    axs[1, 1].set_title('Pitch Angle')
     axs[1, 1].grid(True)
+
+    # Plot Rotor Speeds
+    axs[2, 0].plot(t_plot, w_rotor_hist[:, 0], label='Rotor 1')
+    axs[2, 0].plot(t_plot, w_rotor_hist[:, 1], label='Rotor 2')
+    axs[2, 0].plot(t_plot, w_rotor_hist[:, 2], label='Rotor 3')
+    axs[2, 0].plot(t_plot, w_rotor_hist[:, 3], label='Rotor 4')
+    axs[2, 0].plot(t_plot, w_rotor_hist[:, 4], label='Rotor 5')
+    axs[2, 0].plot(t_plot, w_rotor_hist[:, 5], label='Rotor 6')
+    axs[2, 0].set_xlabel('Time [s]')
+    axs[2, 0].set_ylabel('Rotor Speed [RPM]')
+    axs[2, 0].set_title('Rotor Speeds')
+    axs[2, 0].legend()
+    axs[2, 0].grid(True)
+
+    # Plot Rotor Accelerations
+    axs[2, 1].plot(t_plot, alpha_rotor_hist[:, 0], label='Rotor 1')
+    axs[2, 1].plot(t_plot, alpha_rotor_hist[:, 1], label='Rotor 2')
+    axs[2, 1].plot(t_plot, alpha_rotor_hist[:, 2], label='Rotor 3')
+    axs[2, 1].plot(t_plot, alpha_rotor_hist[:, 3], label='Rotor 4')
+    axs[2, 1].plot(t_plot, alpha_rotor_hist[:, 4], label='Rotor 5')
+    axs[2, 1].plot(t_plot, alpha_rotor_hist[:, 5], label='Rotor 6')
+    axs[2, 1].set_xlabel('Time [s]')
+    axs[2, 1].set_ylabel('Rotor Acceleration [RPM/s]')
+    axs[2, 1].set_title('Rotor Accelerations')
+    axs[2, 1].legend()
+    axs[2, 1].grid(True)
 
     plt.tight_layout()
     plt.show()
