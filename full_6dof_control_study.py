@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 from model.S550_sim_model import S550_Attitude_model
 from ode_solver import custom_rk4
 from PID_control.pid_position import PID_Position_Control
-from PID_control.pid_attitude import PID_control
+from PID_control.geometric_attitude_control import GeometricAttitudeControl
 from PID_control.control_allocator import ControlAllocator
 
 def quaternion_to_euler(q):
@@ -55,10 +55,9 @@ def main():
                            'Kd_pos': np.array([2.5, 2.5, 4.0]),
                            'Ki_pos': np.array([0.05, 0.05, 0.1])}
 
-    # Attitude control gains
-    attitude_gain_params = {'Kp': np.array([10., 10., 10.]),
-                           'Kd': np.array([5., 5., 5.]),
-                           'Ki': np.array([0.01, 0.01, 0.01])}
+    # Attitude control gains (geometric control - no integral term needed)
+    attitude_gain_params = {'Kp': np.array([8.0, 8.0, 8.0]),
+                           'Kd': np.array([3.0, 3.0, 3.0])}
 
     # ========== Initialize Model and Controllers ==========
     sim_model = S550_Attitude_model(DynamicParams=dynamic_params,
@@ -68,8 +67,8 @@ def main():
     pid_pos_control = PID_Position_Control(DynamicParams=dynamic_params,
                                            GainParams=position_gain_params)
 
-    pid_att_control = PID_control(DynamicParams=dynamic_params,
-                                  GainParams=attitude_gain_params)
+    geo_att_control = GeometricAttitudeControl(DynamicParams=dynamic_params,
+                                               GainParams=attitude_gain_params)
 
     control_allocator = ControlAllocator(DroneParams=drone_params,
                                          RotorParams=rotor_params)
@@ -150,13 +149,12 @@ def main():
         pos_des_hist.append(p_des.copy())
 
         # ===== Cascaded Control =====
-        # 1. Position controller: compute desired thrust and attitude
-        f_des, q_des = pid_pos_control.compute_control(s, p_des, v_des, dt, yaw_des)
+        # 1. Position controller: compute desired thrust and rotation matrix
+        f_des, R_des = pid_pos_control.compute_control(s, p_des, v_des, dt, yaw_des)
 
-        # 2. Attitude controller: compute desired moment
-        # Create reference state for attitude controller
-        ref = q_des
-        M_des = pid_att_control.set(s, ref)
+        # 2. Geometric attitude controller: compute desired moment
+        w_des = np.zeros(3)  # Desired angular velocity (typically zero)
+        M_des = geo_att_control.compute_control(s, R_des, w_des)
 
         # 3. Control allocation: compute rotor speeds
         cmd = control_allocator.compute_des_rpm(f_des, M_des)
