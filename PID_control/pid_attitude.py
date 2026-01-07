@@ -10,8 +10,10 @@ class PID_control:
         self.Kd = np.diag(GainParams['Kd'])
 
     def set(self, s, ref, tau = np.zeros((3,))):
-        q = s[0:4]  # body -> world
-        w = s[4:7]
+        # Extract quaternion and angular velocity from state
+        # State format: [p(3), v(3), q(4), w(3), w_rot(6), alpha_rot(6)]
+        q = s[6:10]  # quaternion: body -> world
+        w = s[10:13]  # angular velocity
 
         q_ref = ref[0:4]    # ref -> world
         q_ref_conj = self._conjugate(q_ref)

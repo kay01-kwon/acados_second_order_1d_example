@@ -50,10 +50,10 @@ def main():
                     'alpha_rotor_max': 15e3,
                     'jerk_rotor_max': 250e3,}
 
-    # Position control gains
-    position_gain_params = {'Kp_pos': np.array([5.0, 5.0, 10.0]),
-                           'Kd_pos': np.array([4.0, 4.0, 6.0]),
-                           'Ki_pos': np.array([0.1, 0.1, 0.2])}
+    # Position control gains (reduced for stability)
+    position_gain_params = {'Kp_pos': np.array([2.0, 2.0, 5.0]),
+                           'Kd_pos': np.array([2.5, 2.5, 4.0]),
+                           'Ki_pos': np.array([0.05, 0.05, 0.1])}
 
     # Attitude control gains
     attitude_gain_params = {'Kp': np.array([10., 10., 10.]),
