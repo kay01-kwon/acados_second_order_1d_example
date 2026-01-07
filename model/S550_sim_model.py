@@ -67,6 +67,7 @@ class S550_Attitude_model:
         self.jerk_rotor_max = RotorParams['jerk_rotor_max']     # RPM/s^2
 
         self.rotor_pos = np.zeros((6,3))
+        self._compute_rotor_pos()
 
     def _compute_rotor_pos(self):
         """
@@ -135,7 +136,7 @@ class S550_Attitude_model:
         dqdt = 0.5 * q_l @ w_quat
 
         J_w = self.J @ w
-        dwdt = (moment - np.cross(w, J_w)) / self.J
+        dwdt = np.linalg.solve(self.J, moment - np.cross(w, J_w))
 
 
         w_dot_rot = np.zeros(6)
