@@ -75,7 +75,7 @@ if __name__ == '__main__':
         u, status = ocp.ocp_solve(x, ref, u)
         u_array[i+1] = u[0]
         ref[2] = u[0]
-        print(ref)
+        # print(ref)
 
         x_next = custom_rk4.do_step(sim.ode_func,
                                     x, u, tspan=t_ode)
